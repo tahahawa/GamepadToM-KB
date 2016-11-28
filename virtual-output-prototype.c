@@ -9,8 +9,8 @@
 void setupAllowedEvents(int*);
 
 int main(int argc, char const *argv[]) {
-  struct uinput_user_dev uinput_device;
-  struct input_event event;
+  struct uinput_user_dev uindev;
+  struct input_event ev;
   int i, fd;
 
   fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -19,13 +19,13 @@ int main(int argc, char const *argv[]) {
 
 
   /* Set up the id information for the device */
-  memset(&uinput_device, 0, sizeof(struct uinput_user_dev));
-  snprintf(uinput_device.name, UINPUT_MAX_NAME_SIZE, "gp2mkb virtual device");
-  uinput_device.id.bustype = BUS_USB;
-  uinput_device.id.vendor = 0;
-  uinput_device.id.product = 0;
-  uinput_device.id.version = 1;
-  if(write(fd, &uinput_device, sizeof(struct uinput_user_dev)) < 0)
+  memset(&uindev, 0, sizeof(struct uinput_user_dev));
+  snprintf(uindev.name, UINPUT_MAX_NAME_SIZE, "gp2mkb virtual device");
+  uindev.id.bustype = BUS_USB;
+  uindev.id.vendor = 0;
+  uindev.id.product = 0;
+  uindev.id.version = 1;
+  if(write(fd, &uindev, sizeof(struct uinput_user_dev)) < 0)
     {}//write error
 
   setupAllowedEvents(&fd);
@@ -39,11 +39,11 @@ int main(int argc, char const *argv[]) {
    * Sync report improves eve more, but might just be the extra usleep
   */
   usleep(25000);
-  memset(&event, 0, sizeof(struct input_event));
-  event.type = EV_SYN;
-  event.code = SYN_REPORT;
-  event.value = 0;
-  write(fd, &event, sizeof(struct input_event));
+  memset(&ev, 0, sizeof(struct input_event));
+  ev.type = EV_SYN;
+  ev.code = SYN_REPORT;
+  ev.value = 0;
+  write(fd, &ev, sizeof(struct input_event));
   usleep(10000);
 
 
@@ -51,6 +51,8 @@ int main(int argc, char const *argv[]) {
 
   if (ioctl(fd, UI_DEV_DESTROY) < 0)
     {}//ioctlerror
+
+  close(fd);
 
   return 0;
 }
