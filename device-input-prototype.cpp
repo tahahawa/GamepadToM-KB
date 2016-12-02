@@ -19,6 +19,8 @@
 // Dependencies are glib and libevdev so compile with:
 // gcc `pkg-config --cflags --libs libevdev glib-2.0`
 // device-input-prototype.c
+// amended to: g++ device-input-prototype.cpp -Wall `pkg-config --cflags --libs libevdev glib-2.0 jsoncpp`
+
 
 using namespace std;
 
