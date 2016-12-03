@@ -18,7 +18,6 @@
 class output_dev {
 private:
 struct uinput_user_dev uindev;
-struct input_event ev;
 int i;
 int fd;
 void setupAllowedEvents(int*);
@@ -26,12 +25,12 @@ void setupAllowedEvents(int*);
 public:
 output_dev();
 ~output_dev();
-void send(int*);
+void send(struct input_event*, int, bool);
 
 };
 
 output_dev::output_dev(){
-        fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+        fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_SYNC);
         if (fd < 0)
                 delete this; // failed to open
 
@@ -45,6 +44,11 @@ output_dev::output_dev(){
                 delete this;  //write error
 
         output_dev::setupAllowedEvents(&fd);
+
+        if (ioctl(fd, UI_DEV_CREATE) < 0)
+                delete this; // creation error
+        usleep(50000);
+
 }
 
 output_dev::~output_dev() {
@@ -52,10 +56,24 @@ output_dev::~output_dev() {
                 close(fd);
 }
 
-void output_dev::send(int*){
+void output_dev::send(struct input_event* events, int size, bool autoSync=true){
         //take event as param, parse it, and send it to the fd. idk how
-        //TODO
 
+        for (int i = 0; i < size; ++i) {
+          write(fd, &(events[i]), sizeof(struct input_event));
+        }
+
+        if (autoSync) {
+          struct input_event ev;
+          ev.type = EV_SYN;
+          ev.code = SYN_REPORT;
+          ev.value = 0;
+          write(fd, &ev, sizeof(struct input_event));
+
+        }
+        usleep(10000);
+        fsync(fd);
+}
         /* possible useful code block
            usleep(25000);
            memset(&ev, 0, sizeof(struct input_event));
@@ -64,7 +82,7 @@ void output_dev::send(int*){
            ev.value = 0;
            write(fd, &ev, sizeof(struct input_event));
            usleep(10000);*/
-}
+
 // A lot of the following code has been adapted from SDL
 
 // Dependencies are glib and libevdev so compile with:
@@ -96,7 +114,6 @@ int main() {
         string t = root["mappings"].get(s, true).asString();
         std::cout << t;
 
-        int i;
         struct libevdev *dev = NULL;
         int fd;
         int rc = 1;
@@ -128,7 +145,6 @@ int main() {
                 rc = libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL, &ev);
 //TODO, send events from this loop to output_dev object send function, using example getting of mapping from JSON file
                 if (rc == LIBEVDEV_READ_STATUS_SUCCESS ) {
-                        int absNoise = 1;
                         if (ev.type == EV_ABS) {
                                 if (handleAbsEvent(&ev)) {
                                         std::cout << libevdev_event_type_get_name(ev.type) << ", " << libevdev_event_code_get_name(ev.type, ev.code) << ", " << ev.value << endl;
@@ -284,38 +300,44 @@ void output_dev::setupAllowedEvents(int *fd) {
 
 
 
-        for (i = BTN_TRIGGER_HAPPY; i <= REL_MISC; ++i) {
+        for (i = REL_X; i <= REL_MISC; ++i) {
                 if (ioctl(*fd, UI_SET_RELBIT, i) < 0)
                 {}//ioctlerror
         }
 
 
 
-        for (i = ABS_X; i <= ABS_BRAKE; ++i) {
-                if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
-                {}//ioctlerror
+        /* Disabled due to conflicts with relative events
+
+        for (i = ABS_X; i <= ABS_RZ; ++i) {
+          if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
+            {}//ioctlerror
+        }
+
+        for (i = ABS_THROTTLE; i <= ABS_BRAKE; ++i) {
+          if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
+            {}//ioctlerror
         }
 
         for (i = ABS_HAT0X; i <= ABS_TOOL_WIDTH; ++i) {
-                if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
-                {}//ioctlerror
+          if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
+            {}//ioctlerror
         }
 
         for (i = ABS_VOLUME; i <= ABS_VOLUME; ++i) {
-                if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
-                {}//ioctlerror
+          if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
+            {}//ioctlerror
         }
 
         for (i = ABS_MISC; i <= ABS_MISC; ++i) {
-                if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
-                {}//ioctlerror
+          if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
+            {}//ioctlerror
         }
 
         for (i = ABS_MT_SLOT; i <= ABS_MT_TOOL_Y; ++i) {
-                if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
-                {}//ioctlerror
-        }
-
+          if (ioctl(*fd, UI_SET_ABSBIT, i) < 0)
+            {}//ioctlerror
+        }*/
 
 
         for (i = SW_LID; i <= SW_MAX; ++i) {
