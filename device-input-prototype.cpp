@@ -90,6 +90,8 @@ int main() {
         //config file
         config_doc >> root;
         //testing config access
+        output_dev od;
+
         string s = "BTN_SOUTH";
         string t = root["mappings"].get(s, true).asString();
         std::cout << t;
