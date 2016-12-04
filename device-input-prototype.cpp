@@ -15,10 +15,113 @@
 #include <json/json.h>
 
 
+class input_dev {
+private:
+struct libevdev* dev;
+int fd;
+bool validInput(struct input_event*);
+int deadzone[4][2];
+
+public:
+input_dev();
+~input_dev();
+int poll(struct input_event*, int);
+
+};
+
+input_dev::input_dev() {
+	int rc = 1;
+
+	// Detect the first joystick event file
+	GDir *dir = g_dir_open("/dev/input/by-path/", 0, NULL);
+	const gchar *fname;
+	while ((fname = g_dir_read_name(dir))) {
+		if (g_str_has_suffix(fname, "event-joystick"))
+		break;
+	}
+	std::cout << "Opening event file /dev/input/by-path/" << fname << std::endl;
+
+	fd = open(g_strconcat("/dev/input/by-path/", fname, NULL), O_RDONLY | O_NONBLOCK);
+	rc = libevdev_new_from_fd(fd, &dev);
+	if (rc < 0) {
+		fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
+		exit(1);
+	}
+	std::cout << "Input device name: " << libevdev_get_name(dev) << std::endl;
+	std::cout << "Input device ID: bus " << libevdev_get_id_bustype(dev) << " vendor " << libevdev_get_id_vendor(dev) << " product " << libevdev_get_id_product(dev) << std::endl;
+	std::cout << std::endl << std::endl << std::endl << std::endl;
+
+
+	deadzone[0][0] = -7000;
+	deadzone[0][1] = 7000;
+	deadzone[1][0] = -7000;
+	deadzone[1][1] = 7000;
+	deadzone[2][0] = -7000;
+	deadzone[2][1] = 7000;
+	deadzone[3][0] = -7000;
+	deadzone[3][1] = 7000;
+}
+
+input_dev::~input_dev() {
+  if (!(fd < 0))
+          close(fd);
+}
+
+int input_dev::poll(struct input_event* events, int size) {
+	int count = 0;
+	struct input_event ev;
+
+	memset(events, 0, size * sizeof(struct input_event));
+
+
+	int rc = LIBEVDEV_READ_STATUS_SUCCESS;
+	while(rc == LIBEVDEV_READ_STATUS_SUCCESS) {
+		memset(&ev, 0, sizeof(struct input_event));
+		rc = libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL, &ev);
+
+		if (rc != LIBEVDEV_READ_STATUS_SUCCESS)
+			break;
+		if (ev.type == EV_SYN)
+			break;
+
+		if (count == size-1)
+			return -1;
+
+		if (validInput(&ev) && ev.type != EV_SYN) {
+			events[count] = ev;
+			++count;
+		}
+	}
+	return count;
+}
+
+bool input_dev::validInput(struct input_event* ev) {
+	bool isValid = false;
+	switch (ev->code) {
+	case ABS_X:
+	case ABS_Y:
+		if (ev->value < deadzone[ev->code][0])
+			isValid = true;
+		else if (ev->value > deadzone[ev->code][1])
+			isValid = true;
+		break;
+	case ABS_RX:
+	case ABS_RY:
+		if (ev->value < deadzone[ev->code-1][0])
+			isValid = true;
+		else if (ev->value > deadzone[ev->code-1][1])
+			isValid = true;
+		break;
+	default:
+		isValid = true;
+		break;
+	}
+	return isValid;
+}
+
 class output_dev {
 private:
 struct uinput_user_dev uindev;
-int i;
 int fd;
 void setupAllowedEvents(int*);
 
@@ -29,7 +132,7 @@ void send(struct input_event*, int, bool);
 
 };
 
-output_dev::output_dev(){
+output_dev::output_dev() {
         fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_SYNC);
         if (fd < 0)
                 delete this; // failed to open
@@ -60,17 +163,17 @@ void output_dev::send(struct input_event* events, int size, bool autoSync=true){
         //take event as param, parse it, and send it to the fd. idk how
 
         for (int i = 0; i < size; ++i) {
-          write(fd, &(events[i]), sizeof(struct input_event));
+                write(fd, &(events[i]), sizeof(struct input_event));
         }
 
         if (autoSync) {
-          struct input_event ev;
-          ev.type = EV_SYN;
-          ev.code = SYN_REPORT;
-          ev.value = 0;
-          write(fd, &ev, sizeof(struct input_event));
-
+                struct input_event ev;
+                ev.type = EV_SYN;
+                ev.code = SYN_REPORT;
+                ev.value = 0;
+                write(fd, &ev, sizeof(struct input_event));
         }
+
         usleep(10000);
         fsync(fd);
 }
@@ -93,16 +196,9 @@ void output_dev::send(struct input_event* events, int size, bool autoSync=true){
 
 using namespace std;
 
-int handleAbsEvent(struct input_event*);
-
 Json::Value root;   // starts as "null"; will contain the root value after parsing
 std::ifstream config_doc("config.json", std::ifstream::binary);
 
-
-int deadzone[4][2] = {
-        { -7000, 7000 }, { -7000, 7000 },
-        { -7000, 7000 }, { -7000, 7000 }
-};
 
 int main() {
         //config file
@@ -114,83 +210,22 @@ int main() {
         string t = root["mappings"].get(s, true).asString();
         std::cout << t;
 
-        struct libevdev *dev = NULL;
-        int fd;
-        int rc = 1;
+        input_dev id;
 
-        // Detect the first joystick event file
-        GDir *dir = g_dir_open("/dev/input/by-path/", 0, NULL);
-        const gchar *fname;
-        while ((fname = g_dir_read_name(dir))) {
-                if (g_str_has_suffix(fname, "event-joystick"))
-                        break;
-        }
-        std::cout << "Opening event file /dev/input/by-path/" << fname << endl;
+	int numEvs = 1;
+	struct input_event events[8];
 
-        fd = open(g_strconcat("/dev/input/by-path/", fname, NULL),
-                  O_RDONLY | O_NONBLOCK);
-        rc = libevdev_new_from_fd(fd, &dev);
-        if (rc < 0) {
-                fprintf(stderr, "Failed to init libevdev (%s)\n", strerror(-rc));
-                exit(1);
-        }
-        std::cout << "Input device name: " << libevdev_get_name(dev) << endl;
-        std::cout << "Input device ID: bus " << libevdev_get_id_bustype(dev) << " vendor " << libevdev_get_id_vendor(dev) << " product " << libevdev_get_id_product(dev) << endl;
-        std::cout << endl << endl << endl << endl;
-
-        /* Poll Device */
-        rc = -EAGAIN;
-        while(rc == LIBEVDEV_READ_STATUS_SUCCESS || rc == -EAGAIN) {
-                struct input_event ev;
-                rc = libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL, &ev);
-//TODO, send events from this loop to output_dev object send function, using example getting of mapping from JSON file
-                if (rc == LIBEVDEV_READ_STATUS_SUCCESS ) {
-                        if (ev.type == EV_ABS) {
-                                if (handleAbsEvent(&ev)) {
-                                        std::cout << libevdev_event_type_get_name(ev.type) << ", " << libevdev_event_code_get_name(ev.type, ev.code) << ", " << ev.value << endl;
-                                }
-                        } else {
-                                if (ev.type != EV_SYN) {
-                                        std::cout << libevdev_event_type_get_name(ev.type) << ", " << libevdev_event_code_get_name(ev.type, ev.code) << ", " << ev.value << endl;
-
-                                }
-                        }
-                }
-
-        }
-
-        close(fd);
+	while (numEvs == -1 || numEvs == 0 || numEvs > 0) {
+		numEvs = id.poll(events, 8);
+		//TODO, send events from this loop to output_dev object send function, using example getting of mapping from JSON file
+		if (numEvs > 0){
+			for (int i = 0; i < numEvs; ++i) {
+				std::cout << libevdev_event_type_get_name(events[i].type) << ", " << libevdev_event_code_get_name(events[i].type, events[i].code) << ", " << events[i].value << std::endl;
+			}
+		}
+	}
 
         return 0;
-}
-
-/* Takes an input_event* with type EV_ABS.
-   Returns 1 if the input is valid, 0 if the input should be ignored
-   (ie: value lies within deadzone).
-   Currently uses a global 2D array called 'deadzone'.
- */
-int handleAbsEvent(struct input_event *ev) {
-        int ret = 0;
-        switch (ev->code) {
-        case ABS_X:
-        case ABS_Y:
-                if (ev->value < deadzone[ev->code][0])
-                        ret = 1;
-                else if (ev->value > deadzone[ev->code][1])
-                        ret = 1;
-                break;
-        case ABS_RX:
-        case ABS_RY:
-                if (ev->value < deadzone[ev->code-1][0])
-                        ret = 1;
-                else if (ev->value > deadzone[ev->code-1][1])
-                        ret = 1;
-                break;
-        default:
-                ret = 1;
-                break;
-        }
-        return ret;
 }
 
 void output_dev::setupAllowedEvents(int *fd) {
