@@ -31,8 +31,11 @@ vector<string> splitCommands(string inString) {
 }
 
 void deviceOptionsParsing(string valString, virtual_dev &vd);
+
 void modifierOptionsParsing(string valString, dev_mode &tempMode);
+
 void pointer_stickOptionParsing(string valString, dev_mode &tempMode);
+
 void setupBindings(
     Json::Value &modifier_mappings, vector<string> &mappingKeyNames,
     vector<string> &mappingValNames, vector<string> &mappingValSequence,
@@ -40,6 +43,11 @@ void setupBindings(
     event_sgnt &tempDownSignature, vector<struct input_event> &tempUpEvents,
     vector<struct input_event> &tempDownEvents, input_event &tempEvent,
     mode_modifier &tempModifier, dev_mode &tempMode);
+
+void updateLoop(vector<struct input_event> &inEvents,
+                vector<struct input_event> &outEvents, input_dev &id,
+                virtual_dev &vd, output_dev &od, unsigned int &numEvs,
+                int &count);
 
 Json::Value root; // starts as "null"; will contain the root value after parsing
 ifstream config_doc("gp2mkb.conf", ifstream::binary);
@@ -132,128 +140,7 @@ int main() {
 
   int count = 0;
   while (numEvs == 0 || numEvs > 0) {
-    inEvents.clear();
-    outEvents.clear();
-    id.poll(&inEvents); // get all the events up to the next sync event
-    numEvs = inEvents.size();
-    for (unsigned int i = 0; i < numEvs; ++i) {
-      outEvents.clear();
-      // should never be EV_SYN, but I left it in here while testing just to be
-      // safe
-      if (inEvents[i].type == EV_SYN) {
-        continue;
-      }
-      if (inEvents[i].type == 20) { // if it's analog stick event we handle them
-                                    // differently. update the devie state
-                                    // instead
-        if (inEvents[i].code == REL_X) {
-          vd.X = inEvents[i].value;
-          if (!vd.curr_mode->la_radial) // this might be useful depending on
-                                        // how/if we do directional-bound inputs
-            continue;
-        } else if (inEvents[i].code == REL_Y) {
-          vd.Y = inEvents[i].value;
-          if (!vd.curr_mode->la_radial)
-            continue;
-        } else if (inEvents[i].code == REL_RX) {
-          vd.RX = inEvents[i].value;
-          if (!vd.curr_mode->ra_radial)
-            continue;
-        } else if (inEvents[i].code == REL_RY) {
-          vd.RY = inEvents[i].value;
-          if (!vd.curr_mode->ra_radial)
-            continue;
-        }
-        continue; // might need to remove for directional-bound input stuff
-      }
-      // an event signature is basically just an input_event minus the time
-      // component. we could probably just use input_events now that the design
-      // has changed
-      input_event signature = inEvents[i];
-      if (signature.type == EV_KEY) {
-        if (vd.mode_code ==
-            signature
-                .code) { // check if we need to swap our mode after this input
-          vd.swap_mode = true;
-          continue;
-        }
-        // use our event signature key in the right map and get the event
-        // sequence we should send
-        if (vd.curr_mode->curr_modifier->key_events.find(signature) !=
-            vd.curr_mode->curr_modifier->key_events.end()) {
-          outEvents = vd.curr_mode->curr_modifier->key_events[signature];
-        } else {
-          continue;
-        }
-      } else if (signature.type == EV_ABS) {
-        if (signature.code == ABS_Z) { // keep track of the trigger states, but
-                                       // still allow them to be pressed if
-                                       // they're not acting as a modifier
-          vd.LT = signature.type;
-        } else if (signature.code == ABS_RZ) {
-          vd.RT = signature.type;
-        }
-        if (vd.curr_mode->curr_modifier->abs_events.find(signature) !=
-            vd.curr_mode->curr_modifier->abs_events.end()) {
-          outEvents = vd.curr_mode->curr_modifier->abs_events[signature];
-        } else {
-          continue;
-        }
-      } else {
-        // invalid input_event
-        continue;
-      }
-      od.send(outEvents); // send the output events to the device
-    }
-
-    ++count;
-    /* We can mess around with this threshold value to update how often we move
-       the mouse.
-
-       At lower values we build up a queue of stick input events and so the
-       mouse
-       will lag behind, continuing to complete its queue for a bit after stick
-       input
-       has stopped (if you want to see this move the stick in large circles
-       rapidly).
-
-       At higher values we avoid the lag issue, and the mouse moves as you move
-       the stick
-       (but there will be a slight decrease in response/accuracy)
-
-    */
-
-    /*
-      Currently only the left stick is supported, and we don't take into account
-      whether
-      it is actually supposed to be controlled with the left stick
-    */
-    if (count > 5) {
-      outEvents.clear();
-      struct input_event tempEvent;
-      tempEvent.type = EV_REL;
-      tempEvent.code = REL_X;
-      tempEvent.value = (int)vd.X / 4000; // 4000 seems to be a good deadzone on
-                                          // my controller, scales mouse
-                                          // movement somewhat according to how
-                                          // far you move stick
-
-      outEvents.push_back(tempEvent);
-      struct tempEvent;
-      tempEvent.type = EV_REL;
-      tempEvent.code = REL_Y;
-      tempEvent.value = (int)vd.Y / 4000;
-
-      outEvents.push_back(tempEvent);
-      od.send(outEvents);
-      count = 0;
-    }
-    vd.curr_mode->updateModifier(
-        vd.LT, vd.RT); // update what trigger modifiers are pressed
-    if (vd.swap_mode) {
-      // this should increment to the next mode, or go to the original mode if
-      // at the end of the list
-    }
+    updateLoop(inEvents, outEvents, id, vd, od, numEvs, count);
   }
   return 0;
 }
@@ -430,4 +317,132 @@ void setupBindings(
 
   // check if mode_code > 0 before checking for more modes
   /* End modifier preset parsing */
+}
+
+void updateLoop(vector<struct input_event> &inEvents,
+                vector<struct input_event> &outEvents, input_dev &id,
+                virtual_dev &vd, output_dev &od, unsigned int &numEvs,
+                int &count) {
+  inEvents.clear();
+  outEvents.clear();
+  id.poll(&inEvents); // get all the events up to the next sync event
+  numEvs = inEvents.size();
+  for (unsigned int i = 0; i < numEvs; ++i) {
+    outEvents.clear();
+    // should never be EV_SYN, but I left it in here while testing just to be
+    // safe
+    if (inEvents[i].type == EV_SYN) {
+      continue;
+    }
+    if (inEvents[i].type == 20) { // if it's analog stick event we handle them
+                                  // differently. update the devie state
+                                  // instead
+      if (inEvents[i].code == REL_X) {
+        vd.X = inEvents[i].value;
+        if (!vd.curr_mode->la_radial) // this might be useful depending on
+                                      // how/if we do directional-bound inputs
+          continue;
+      } else if (inEvents[i].code == REL_Y) {
+        vd.Y = inEvents[i].value;
+        if (!vd.curr_mode->la_radial)
+          continue;
+      } else if (inEvents[i].code == REL_RX) {
+        vd.RX = inEvents[i].value;
+        if (!vd.curr_mode->ra_radial)
+          continue;
+      } else if (inEvents[i].code == REL_RY) {
+        vd.RY = inEvents[i].value;
+        if (!vd.curr_mode->ra_radial)
+          continue;
+      }
+      continue; // might need to remove for directional-bound input stuff
+    }
+    // an event signature is basically just an input_event minus the time
+    // component. we could probably just use input_events now that the design
+    // has changed
+    input_event signature = inEvents[i];
+    if (signature.type == EV_KEY) {
+      if (vd.mode_code ==
+          signature
+              .code) { // check if we need to swap our mode after this input
+        vd.swap_mode = true;
+        continue;
+      }
+      // use our event signature key in the right map and get the event
+      // sequence we should send
+      if (vd.curr_mode->curr_modifier->key_events.find(signature) !=
+          vd.curr_mode->curr_modifier->key_events.end()) {
+        outEvents = vd.curr_mode->curr_modifier->key_events[signature];
+      } else {
+        continue;
+      }
+    } else if (signature.type == EV_ABS) {
+      if (signature.code == ABS_Z) { // keep track of the trigger states, but
+                                     // still allow them to be pressed if
+                                     // they're not acting as a modifier
+        vd.LT = signature.type;
+      } else if (signature.code == ABS_RZ) {
+        vd.RT = signature.type;
+      }
+      if (vd.curr_mode->curr_modifier->abs_events.find(signature) !=
+          vd.curr_mode->curr_modifier->abs_events.end()) {
+        outEvents = vd.curr_mode->curr_modifier->abs_events[signature];
+      } else {
+        continue;
+      }
+    } else {
+      // invalid input_event
+      continue;
+    }
+    od.send(outEvents); // send the output events to the device
+  }
+
+  ++count;
+  /* We can mess around with this threshold value to update how often we move
+     the mouse.
+
+     At lower values we build up a queue of stick input events and so the
+     mouse
+     will lag behind, continuing to complete its queue for a bit after stick
+     input
+     has stopped (if you want to see this move the stick in large circles
+     rapidly).
+
+     At higher values we avoid the lag issue, and the mouse moves as you move
+     the stick
+     (but there will be a slight decrease in response/accuracy)
+
+  */
+
+  /*
+    Currently only the left stick is supported, and we don't take into account
+    whether
+    it is actually supposed to be controlled with the left stick
+  */
+  if (count > 5) {
+    outEvents.clear();
+    struct input_event tempEvent;
+    tempEvent.type = EV_REL;
+    tempEvent.code = REL_X;
+    tempEvent.value = (int)vd.X / 4000; // 4000 seems to be a good deadzone on
+                                        // my controller, scales mouse
+                                        // movement somewhat according to how
+                                        // far you move stick
+
+    outEvents.push_back(tempEvent);
+    struct tempEvent;
+    tempEvent.type = EV_REL;
+    tempEvent.code = REL_Y;
+    tempEvent.value = (int)vd.Y / 4000;
+
+    outEvents.push_back(tempEvent);
+    od.send(outEvents);
+    count = 0;
+  }
+  vd.curr_mode->updateModifier(
+      vd.LT, vd.RT); // update what trigger modifiers are pressed
+  if (vd.swap_mode) {
+    // this should increment to the next mode, or go to the original mode if
+    // at the end of the list
+  }
 }
