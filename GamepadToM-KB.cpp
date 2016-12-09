@@ -32,9 +32,9 @@ vector<string> splitCommands(string inString) {
 
 void deviceOptionsParsing(string valString, virtual_dev &vd);
 
-void modifierOptionsParsing(string valString, dev_mode &tempMode);
+void modifierOptionsParsing(string valString, dev_mode* tempMode);
 
-void pointer_stickOptionParsing(string valString, dev_mode &tempMode);
+void pointer_stickOptionParsing(string valString, dev_mode* tempMode);
 
 void setupBindings(
     Json::Value *modifier_mappings, vector<string> *mappingKeyNames,
@@ -102,13 +102,13 @@ int main() {
 
     /* Setup whether this preset allows for trigger modifiers */
     modifierOptionsParsing(mode_options.get("modifiers", false).asString(),
-                           tempMode);
+                           &tempMode);
 
     /* Setup which stick(s) are used for the mouse. Any stick not used
        could be used for directional-bound key events
     */
     pointer_stickOptionParsing(
-        mode_options.get("pointer_stick", false).asString(), tempMode);
+        mode_options.get("pointer_stick", false).asString(), &tempMode);
 
     /* End mode parsing */
 
@@ -151,6 +151,8 @@ int main() {
     vd.mode_list.push_back(tempMode);
     ++modeCount;
   }
+
+
   vd.curr_mode = &(vd.mode_list[0]);
   vd.curr_mode->curr_modifier = &(vd.curr_mode->no_modifier);
 
@@ -182,19 +184,19 @@ void deviceOptionsParsing(string valString, virtual_dev &vd) {
   }
 }
 
-void modifierOptionsParsing(string valString, dev_mode &tempMode) {
+void modifierOptionsParsing(string valString, dev_mode* tempMode) {
   if (valString.compare("left") == 0) {
-    tempMode.lt_modifier = true;
-    tempMode.rt_modifier = false;
+    (*tempMode).lt_modifier = true;
+    (*tempMode).rt_modifier = false;
   } else if (valString.compare("right") == 0) {
-    tempMode.lt_modifier = false;
-    tempMode.rt_modifier = true;
+    (*tempMode).lt_modifier = false;
+    (*tempMode).rt_modifier = true;
   } else if (valString.compare("both") == 0) {
-    tempMode.lt_modifier = true;
-    tempMode.rt_modifier = true;
+    (*tempMode).lt_modifier = true;
+    (*tempMode).rt_modifier = true;
   } else if (valString.compare("off") == 0) {
-    tempMode.lt_modifier = false;
-    tempMode.rt_modifier = false;
+    (*tempMode).lt_modifier = false;
+    (*tempMode).rt_modifier = false;
   } else {
     cout << "Unexpected modifier option specified, please fix your config"
          << endl;
@@ -202,19 +204,19 @@ void modifierOptionsParsing(string valString, dev_mode &tempMode) {
   }
 }
 
-void pointer_stickOptionParsing(string valString, dev_mode &tempMode) {
+void pointer_stickOptionParsing(string valString, dev_mode* tempMode) {
   if (valString.compare("left") == 0) {
-    tempMode.la_radial = false;
-    tempMode.ra_radial = true;
+    (*tempMode).la_radial = false;
+    (*tempMode).ra_radial = true;
   } else if (valString.compare("right") == 0) {
-    tempMode.la_radial = true;
-    tempMode.ra_radial = false;
+    (*tempMode).la_radial = true;
+    (*tempMode).ra_radial = false;
   } else if (valString.compare("both") == 0) {
-    tempMode.la_radial = true;
-    tempMode.ra_radial = true;
+    (*tempMode).la_radial = true;
+    (*tempMode).ra_radial = true;
   } else if (valString.compare("off") == 0) {
-    tempMode.la_radial = false;
-    tempMode.ra_radial = false;
+    (*tempMode).la_radial = false;
+    (*tempMode).ra_radial = false;
   } else {
     cout << "Your pointer stick configuration is wrong. Please fix your config."
          << endl;
@@ -390,9 +392,11 @@ void updateLoop(vector<struct input_event> &inEvents,
       }
       continue; // might need to remove for directional-bound input stuff
     }
+
     // an event signature is basically just an input_event minus the time
     // component. we could probably just use input_events now that the design
     // has changed
+
     event_sgnt signature;
     signature.getSignature(inEvents[i]);
     if (signature.type == EV_KEY) {
@@ -429,7 +433,6 @@ void updateLoop(vector<struct input_event> &inEvents,
     }
     od.send(outEvents); // send the output events to the device
   }
-
   ++count;
   /* We can mess around with this threshold value to update how often we move
      the mouse.
@@ -454,21 +457,28 @@ void updateLoop(vector<struct input_event> &inEvents,
   */
   if (count > 5) {
     outEvents.clear();
-    struct input_event tempEvent;
-    tempEvent.type = EV_REL;
-    tempEvent.code = REL_X;
-    tempEvent.value = (int)vd.X / 4000; // 4000 seems to be a good deadzone on
-                                        // my controller, scales mouse
-                                        // movement somewhat according to how
-                                        // far you move stick
 
-    outEvents.push_back(tempEvent);
-    struct tempEvent;
-    tempEvent.type = EV_REL;
-    tempEvent.code = REL_Y;
-    tempEvent.value = (int)vd.Y / 4000;
-
-    outEvents.push_back(tempEvent);
+    if (!vd.curr_mode->la_radial) {
+      struct input_event tempEvent;
+      tempEvent.type = EV_REL;
+      tempEvent.code = REL_X;
+      tempEvent.value = (int)vd.X / 4000;
+      outEvents.push_back(tempEvent);
+      tempEvent.type = EV_REL;
+      tempEvent.code = REL_Y;
+      tempEvent.value = (int)vd.Y / 4000;
+      outEvents.push_back(tempEvent);
+    } else if (!vd.curr_mode->ra_radial) {
+      struct input_event tempEvent;
+      tempEvent.type = EV_REL;
+      tempEvent.code = REL_X;
+      tempEvent.value = (int)vd.RX / 4000;
+      outEvents.push_back(tempEvent);
+      tempEvent.type = EV_REL;
+      tempEvent.code = REL_Y;
+      tempEvent.value = (int)vd.RY / 4000;
+      outEvents.push_back(tempEvent);
+    }
     od.send(outEvents);
     count = 0;
   }
