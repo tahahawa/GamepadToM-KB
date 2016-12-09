@@ -24,7 +24,7 @@ void event_sgnt::set(int t, int c, int v) {
 }
 
 void event_sgnt::getSignature(struct input_event &ev) {
-  if (ev.type == EV_ABS && (ev.code == ABS_Z && ev.code <= ABS_RZ)) {
+  if (ev.type == EV_ABS && (ev.code == ABS_Z || ev.code == ABS_RZ)) {
     if (ev.value > 0) {
       this->set(ev.type, ev.code, 1);
     } else {

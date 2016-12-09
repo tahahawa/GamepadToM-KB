@@ -474,12 +474,12 @@ void updateLoop(vector<struct input_event> &inEvents,
   }
 
   // update what trigger modifiers are pressed
+
   vd.curr_mode->updateModifier(vd.LT, vd.RT);
 
   if (vd.swap_mode) {
     // this should increment to the next mode, or go to the original mode if
     // at the end of the list
-    int gdb = 1;
     if (vd.modeNum < (vd.mode_list.size()-1)) {
       ++vd.modeNum;
     } else {
