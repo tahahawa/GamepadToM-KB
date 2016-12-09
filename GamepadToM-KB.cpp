@@ -37,12 +37,12 @@ void modifierOptionsParsing(string valString, dev_mode* tempMode);
 void pointer_stickOptionParsing(string valString, dev_mode* tempMode);
 
 void setupBindings(
-    Json::Value *modifier_mappings, vector<string> *mappingKeyNames,
+    Json::Value *modifier_mappings, Json::Value *absmod_mappings, vector<string> *mappingKeyNames,
     vector<string> *mappingValNames, vector<string> *mappingValSequence,
     int code, virtual_dev &vd, event_sgnt *tempUpSignature,
     event_sgnt *tempDownSignature, vector<struct input_event> *tempUpEvents,
     vector<struct input_event> *tempDownEvents, input_event *tempEvent,
-    mode_modifier *tempModifier, dev_mode *tempMode, int, string);
+    mode_modifier *tempModifier, dev_mode *tempMode, int);
 
 void updateLoop(vector<struct input_event> &inEvents,
                 vector<struct input_event> &outEvents, input_dev &id,
@@ -136,15 +136,16 @@ int main() {
       Json::Value modifier_mappings = mode_modifier["keys"];
       if (modifier_mappings.isNull()) { /* error */
       }
+      Json::Value absmod_mappings = mode_modifier["abs"];
       vector<string> mappingKeyNames = modifier_mappings.getMemberNames();
       vector<string> mappingValNames;
       vector<string> mappingValSequence;
       int code = 0;
 
-      setupBindings(&modifier_mappings, &mappingKeyNames, &mappingValNames,
+      setupBindings(&modifier_mappings, &absmod_mappings, &mappingKeyNames, &mappingValNames,
                     &mappingValSequence, code, vd, &tempUpSignature,
                     &tempDownSignature, &tempUpEvents, &tempDownEvents, &tempEvent,
-                    &tempModifier, &tempMode, i, modeName);
+                    &tempModifier, &tempMode, i);
     }
     tempMode.curr_mod = 0;
     tempMode.curr_modifier = NULL;
@@ -225,13 +226,12 @@ void pointer_stickOptionParsing(string valString, dev_mode* tempMode) {
 }
 
 void setupBindings(
-    Json::Value *modifier_mappings, vector<string> *mappingKeyNames,
+    Json::Value *modifier_mappings, Json::Value *absmod_mappings, vector<string> *mappingKeyNames,
     vector<string> *mappingValNames, vector<string> *mappingValSequence,
     int code, virtual_dev &vd, event_sgnt *tempUpSignature,
     event_sgnt *tempDownSignature, vector<struct input_event> *tempUpEvents,
     vector<struct input_event> *tempDownEvents, input_event *tempEvent,
-    mode_modifier *tempModifier, dev_mode *tempMode, int modifierNum,
-    string modeName) {
+    mode_modifier *tempModifier, dev_mode *tempMode, int modifierNum) {
 
   for (unsigned int i = 0; i < (*mappingKeyNames).size(); ++i) {
     // setup the button we will look for
@@ -278,17 +278,21 @@ void setupBindings(
   }
 
   // setup the trigger/d-pad->key bindings now
-  (*modifier_mappings) = root[modeName]["abs"];
-  if ((*modifier_mappings).isNull()) { /* error */
-  }
+  //(*modifier_mappings) = root[modeName]["abs"];
+  //if ((*modifier_mappings).isNull()) { /* error */
+  //}
   (*mappingKeyNames).clear();
-  (*mappingKeyNames) = (*modifier_mappings).getMemberNames();
+  (*mappingKeyNames) = (*absmod_mappings).getMemberNames();
   (*mappingValNames).clear();
   (*mappingValSequence).clear();
   (*tempDownEvents).clear();
   (*tempUpEvents).clear();
 
   for (unsigned int i = 0; i < (*mappingKeyNames).size(); ++i) {
+    (*mappingValNames).clear();
+    (*mappingValSequence).clear();
+    (*tempDownEvents).clear();
+    (*tempUpEvents).clear();
     const char *valCString = (*mappingKeyNames)[i].c_str();
     code = libevdev_event_code_from_name(EV_ABS, valCString);
     if (code < 0) {
@@ -307,7 +311,7 @@ void setupBindings(
       (*tempUpSignature).value = 0;
 
       string valString =
-      (*modifier_mappings).get((*mappingKeyNames)[i], true).asString();
+      (*absmod_mappings).get((*mappingKeyNames)[i], true).asString();
       (*mappingValSequence).clear();
       (*mappingValSequence) = splitCommands(valString);
 
