@@ -1,3 +1,5 @@
+#include "input_dev.h"
+
 input_dev::input_dev() {
   rc = 1;
 

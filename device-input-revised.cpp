@@ -1,8 +1,7 @@
-#include "dev_mode.h"
-#include "event_sgnt.h"
-#include "input_dev.h"
-#include "mode_modifier.h"
+//#include "dev_mode.h"
 #include "output_dev.h"
+//#include "event_sgnt.h"
+#include "input_dev.h"
 #include "virtual_dev.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -313,7 +312,7 @@ int main() {
       // an event signature is basically just an input_event minus the time
       // component. we could probably just use input_events now that the design
       // has changed
-      event_sgnt signature = getSignature(inEvents[i]);
+      input_event signature = inEvents[i];
       if (signature.type == EV_KEY) {
         if (vd.mode_code ==
             signature

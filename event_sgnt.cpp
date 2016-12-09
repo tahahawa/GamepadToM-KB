@@ -37,3 +37,8 @@ event_sgnt getSignature(struct input_event ev) {
 
   return ret;
 }
+
+bool event_sgnt::operator<(const event_sgnt &rhs) const {
+  return (type < rhs.type) || (type == rhs.type && code < rhs.code) ||
+         (type == rhs.type && code == rhs.code && value < rhs.value);
+}

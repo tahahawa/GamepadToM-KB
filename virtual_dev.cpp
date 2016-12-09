@@ -1,3 +1,5 @@
+#include "virtual_dev.h"
+
 virtual_dev::virtual_dev() {
   X = 0;
   Y = 0;

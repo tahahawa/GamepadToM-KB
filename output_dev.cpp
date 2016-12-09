@@ -1,3 +1,5 @@
+#include "output_dev.h"
+
 output_dev::output_dev() {
   fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_SYNC);
   if (fd < 0)
@@ -43,6 +45,9 @@ void output_dev::send(std::vector<struct input_event> seq,
   usleep(10000);
   fsync(fd);
 }
+
+void output_dev::send(std::vector<struct input_event> &seq) { send(seq, true); }
+
 void output_dev::setupAllowedEvents(int *fd) {
   int i;
 

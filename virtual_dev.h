@@ -1,3 +1,5 @@
+#include "dev_mode.h"
+
 class virtual_dev {
 public:
   int axis_type;
