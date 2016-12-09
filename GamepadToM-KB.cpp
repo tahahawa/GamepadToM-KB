@@ -32,6 +32,7 @@ vector<string> splitCommands(string inString) {
 
 void deviceOptionsParsing(string valString, virtual_dev &vd);
 void modifierOptionsParsing(string valString, dev_mode &tempMode);
+void pointer_stickOptionParsing();
 
 Json::Value root; // starts as "null"; will contain the root value after parsing
 ifstream config_doc("gp2mkb.conf", ifstream::binary);
@@ -85,23 +86,8 @@ int main() {
   /* Setup which stick(s) are used for the mouse. Any stick not used
      could be used for directional-bound key events
   */
-  valString = mode_options.get("pointer_stick", false).asString();
-  if (valString.compare("left") == 0) {
-    tempMode.la_radial = false;
-    tempMode.ra_radial = true;
-  } else if (valString.compare("right") == 0) {
-    tempMode.la_radial = true;
-    tempMode.ra_radial = false;
-  } else if (valString.compare("both") == 0) {
-    tempMode.la_radial = true;
-    tempMode.ra_radial = true;
-  } else if (valString.compare("off") == 0) {
-    tempMode.la_radial = false;
-    tempMode.ra_radial = false;
-  } else {
-    cout << "Your pointer stick configuration is wrong. Please fix your config."
-         << endl;
-  }
+  pointer_stickOptionParsing(
+      mode_options.get("pointer_stick", false).asString(), &tempMode);
 
   /* End mode parsing */
 
@@ -114,7 +100,8 @@ int main() {
   vector<struct input_event> tempUpEvents;
 
   Json::Value mode_modifier = mode["no_modifier"];
-  if (mode_modifier.isNull()) { /* error */
+  if (mode_modifier.isNull()) {
+    cout << "Your mode modifier is missing, please fix your config" << endl;
   }
 
   // setup button->key bindings first
@@ -397,6 +384,26 @@ void modifierOptionsParsing(string valString, dev_mode &tempMode) {
     tempMode.rt_modifier = false;
   } else {
     cout << "Unexpected modifier option specified, please fix your config"
+         << endl;
+    return;
+  }
+}
+
+void pointer_stickOptionParsing(string valString, dev_mode &tempMode) {
+  if (valString.compare("left") == 0) {
+    tempMode.la_radial = false;
+    tempMode.ra_radial = true;
+  } else if (valString.compare("right") == 0) {
+    tempMode.la_radial = true;
+    tempMode.ra_radial = false;
+  } else if (valString.compare("both") == 0) {
+    tempMode.la_radial = true;
+    tempMode.ra_radial = true;
+  } else if (valString.compare("off") == 0) {
+    tempMode.la_radial = false;
+    tempMode.ra_radial = false;
+  } else {
+    cout << "Your pointer stick configuration is wrong. Please fix your config."
          << endl;
     return;
   }
