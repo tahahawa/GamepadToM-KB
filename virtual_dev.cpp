@@ -8,4 +8,5 @@ virtual_dev::virtual_dev() {
   LT = 0;
   RT = 0;
   swap_mode = false;
+  modeNum = 0;
 }

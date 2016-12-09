@@ -23,19 +23,16 @@ void event_sgnt::set(int t, int c, int v) {
   value = v;
 }
 
-event_sgnt getSignature(struct input_event ev) {
-  event_sgnt ret;
+void event_sgnt::getSignature(struct input_event &ev) {
   if (ev.type == EV_ABS && (ev.code == ABS_Z && ev.code <= ABS_RZ)) {
     if (ev.value > 0) {
-      ret.set(ev.type, ev.code, 1);
+      this->set(ev.type, ev.code, 1);
     } else {
-      ret.set(ev.type, ev.code, 0);
+      this->set(ev.type, ev.code, 0);
     }
   } else {
-    ret.set(ev);
+    this->set(ev);
   }
-
-  return ret;
 }
 
 bool event_sgnt::operator<(const event_sgnt &rhs) const {

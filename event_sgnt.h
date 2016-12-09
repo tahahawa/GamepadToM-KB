@@ -13,6 +13,7 @@ public:
   void set(struct input_event &);
   void set(int, int, int);
   bool operator<(const event_sgnt &rhs) const;
+  void getSignature(struct input_event &);
 };
 
 class mode_modifier {

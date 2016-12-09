@@ -37,12 +37,12 @@ void modifierOptionsParsing(string valString, dev_mode &tempMode);
 void pointer_stickOptionParsing(string valString, dev_mode &tempMode);
 
 void setupBindings(
-    Json::Value &modifier_mappings, vector<string> &mappingKeyNames,
-    vector<string> &mappingValNames, vector<string> &mappingValSequence,
-    int &code, virtual_dev &vd, event_sgnt &tempUpSignature,
-    event_sgnt &tempDownSignature, vector<struct input_event> &tempUpEvents,
-    vector<struct input_event> &tempDownEvents, input_event &tempEvent,
-    mode_modifier &tempModifier, dev_mode &tempMode);
+    Json::Value *modifier_mappings, vector<string> *mappingKeyNames,
+    vector<string> *mappingValNames, vector<string> *mappingValSequence,
+    int code, virtual_dev &vd, event_sgnt *tempUpSignature,
+    event_sgnt *tempDownSignature, vector<struct input_event> *tempUpEvents,
+    vector<struct input_event> *tempDownEvents, input_event *tempEvent,
+    mode_modifier *tempModifier, dev_mode *tempMode, int, string);
 
 void updateLoop(vector<struct input_event> &inEvents,
                 vector<struct input_event> &outEvents, input_dev &id,
@@ -84,54 +84,76 @@ int main() {
 
   /* Begin mode parsing */
 
-  dev_mode tempMode;
+  int modeCount = 0;
+  while (1) {
 
-  const Json::Value mode = root["mode_0"];
-  if (mode.isNull()) { /* error */
+    dev_mode tempMode;
+    string modeName = "mode_";
+    modeName.append(to_string(modeCount));
+    Json::Value mode = root[modeName];
+
+    if (mode.isNull()) { /* error */
+      break;
+    }
+
+    Json::Value mode_options = mode["options"];
+    if (mode_options.isNull()) { /* error */
+    }
+
+    /* Setup whether this preset allows for trigger modifiers */
+    modifierOptionsParsing(mode_options.get("modifiers", false).asString(),
+                           tempMode);
+
+    /* Setup which stick(s) are used for the mouse. Any stick not used
+       could be used for directional-bound key events
+    */
+    pointer_stickOptionParsing(
+        mode_options.get("pointer_stick", false).asString(), tempMode);
+
+    /* End mode parsing */
+
+    /* Begin modifier preset parsing */
+
+
+    string modifierNameArray[4] = {"no_modifier", "left_modifier",
+                                         "right_modifier", "both_modifier" };
+
+    for (int i = 0; i < 4; ++i) {
+
+       mode_modifier tempModifier;
+       event_sgnt tempDownSignature;
+       event_sgnt tempUpSignature;
+       struct input_event tempEvent;
+       vector<struct input_event> tempDownEvents;
+       vector<struct input_event> tempUpEvents;
+
+      Json::Value mode_modifier = mode[modifierNameArray[i]];
+      if (mode_modifier.isNull()) {
+        cout << "Your mode modifier is missing, please fix your config" << endl;
+      }
+
+      // setup button->key bindings first
+      Json::Value modifier_mappings = mode_modifier["keys"];
+      if (modifier_mappings.isNull()) { /* error */
+      }
+      vector<string> mappingKeyNames = modifier_mappings.getMemberNames();
+      vector<string> mappingValNames;
+      vector<string> mappingValSequence;
+      int code = 0;
+
+      setupBindings(&modifier_mappings, &mappingKeyNames, &mappingValNames,
+                    &mappingValSequence, code, vd, &tempUpSignature,
+                    &tempDownSignature, &tempUpEvents, &tempDownEvents, &tempEvent,
+                    &tempModifier, &tempMode, i, modeName);
+    }
+    tempMode.curr_mod = 0;
+    tempMode.curr_modifier = NULL;
+    vd.mode_list.push_back(tempMode);
+    ++modeCount;
   }
+  vd.curr_mode = &(vd.mode_list[0]);
+  vd.curr_mode->curr_modifier = &(vd.curr_mode->no_modifier);
 
-  const Json::Value mode_options = mode["options"];
-  if (mode_options.isNull()) { /* error */
-  }
-
-  /* Setup whether this preset allows for trigger modifiers */
-  modifierOptionsParsing(mode_options.get("modifiers", false).asString(),
-                         tempMode);
-
-  /* Setup which stick(s) are used for the mouse. Any stick not used
-     could be used for directional-bound key events
-  */
-  pointer_stickOptionParsing(
-      mode_options.get("pointer_stick", false).asString(), tempMode);
-
-  /* End mode parsing */
-
-  /* Begin modifier preset parsing */
-  mode_modifier tempModifier;
-  event_sgnt tempDownSignature;
-  event_sgnt tempUpSignature;
-  struct input_event tempEvent;
-  vector<struct input_event> tempDownEvents;
-  vector<struct input_event> tempUpEvents;
-
-  Json::Value mode_modifier = mode["no_modifier"];
-  if (mode_modifier.isNull()) {
-    cout << "Your mode modifier is missing, please fix your config" << endl;
-  }
-
-  // setup button->key bindings first
-  Json::Value modifier_mappings = mode_modifier["keys"];
-  if (modifier_mappings.isNull()) { /* error */
-  }
-  vector<string> mappingKeyNames = modifier_mappings.getMemberNames();
-  vector<string> mappingValNames;
-  vector<string> mappingValSequence;
-  int code;
-
-  setupBindings(modifier_mappings, mappingKeyNames, mappingValNames,
-                mappingValSequence, code, vd, tempUpSignature,
-                tempDownSignature, tempUpEvents, tempDownEvents, tempEvent,
-                tempModifier, tempMode);
 
   /* The send->translate->receive loop */
   unsigned int numEvs = 1;
@@ -201,16 +223,17 @@ void pointer_stickOptionParsing(string valString, dev_mode &tempMode) {
 }
 
 void setupBindings(
-    Json::Value &modifier_mappings, vector<string> &mappingKeyNames,
-    vector<string> &mappingValNames, vector<string> &mappingValSequence,
-    int &code, virtual_dev &vd, event_sgnt &tempUpSignature,
-    event_sgnt &tempDownSignature, vector<struct input_event> &tempUpEvents,
-    vector<struct input_event> &tempDownEvents, input_event &tempEvent,
-    mode_modifier &tempModifier, dev_mode &tempMode) {
+    Json::Value *modifier_mappings, vector<string> *mappingKeyNames,
+    vector<string> *mappingValNames, vector<string> *mappingValSequence,
+    int code, virtual_dev &vd, event_sgnt *tempUpSignature,
+    event_sgnt *tempDownSignature, vector<struct input_event> *tempUpEvents,
+    vector<struct input_event> *tempDownEvents, input_event *tempEvent,
+    mode_modifier *tempModifier, dev_mode *tempMode, int modifierNum,
+    string modeName) {
 
-  for (unsigned int i = 0; i < mappingKeyNames.size(); ++i) {
+  for (unsigned int i = 0; i < (*mappingKeyNames).size(); ++i) {
     // setup the button we will look for
-    const char *valCString = mappingKeyNames[i].c_str();
+    const char *valCString = (*mappingKeyNames)[i].c_str();
     code = libevdev_event_code_from_name(EV_KEY, valCString);
     if (code < 0) {
       // not a valid code
@@ -219,102 +242,112 @@ void setupBindings(
       // already used for mode switch. ignore it
       continue;
     }
-    tempDownSignature.type = EV_KEY;
-    tempDownSignature.code = code;
-    tempDownSignature.value = 1;
-    tempUpSignature.type = EV_KEY;
-    tempUpSignature.code = code;
-    tempUpSignature.value = 0;
+    (*tempDownSignature).type = EV_KEY;
+    (*tempDownSignature).code = code;
+    (*tempDownSignature).value = 1;
+    (*tempUpSignature).type = EV_KEY;
+    (*tempUpSignature).code = code;
+    (*tempUpSignature).value = 0;
 
     // setup the events we will send
     string valString =
-        modifier_mappings.get(mappingKeyNames[i], true).asString();
-    mappingValSequence.clear();
-    tempDownEvents.clear();
-    tempUpEvents.clear();
-    mappingValSequence = splitCommands(valString);
-    for (unsigned int j = 0; j < mappingValSequence.size(); ++j) {
-      const char *valCString = mappingValSequence[j].c_str();
+    (*modifier_mappings).get((*mappingKeyNames)[i], true).asString();
+    (*mappingValSequence).clear();
+    (*tempUpEvents).clear();
+    (*tempDownEvents).clear();
+    (*mappingValSequence) = splitCommands(valString);
+    for (unsigned int j = 0; j < (*mappingValSequence).size(); ++j) {
+      const char *valCString = (*mappingValSequence)[j].c_str();
       code = libevdev_event_code_from_name(EV_KEY, valCString);
       if (code < 0) {
         // not a valid code
         continue;
       }
-      tempEvent.type = EV_KEY;
-      tempEvent.code = code;
-      tempEvent.value = 1;
-      tempDownEvents.push_back(tempEvent);
-      tempEvent.value = 0;
-      tempUpEvents.push_back(tempEvent);
+      (*tempEvent).type = EV_KEY;
+      (*tempEvent).code = code;
+      (*tempEvent).value = 1;
+      (*tempDownEvents).push_back((*tempEvent));
+      (*tempEvent).value = 0;
+      (*tempUpEvents).push_back((*tempEvent));
     }
     // add the entries to the map (one for press and one for release)
-    tempModifier.key_events[tempDownSignature] = tempDownEvents;
-    tempModifier.key_events[tempUpSignature] = tempUpEvents;
+    (*tempModifier).key_events[(*tempDownSignature)] = (*tempDownEvents);
+    (*tempModifier).key_events[(*tempUpSignature)] = (*tempUpEvents);
   }
 
   // setup the trigger/d-pad->key bindings now
-  modifier_mappings = root["mode_0"]["abs"];
-  if (modifier_mappings.isNull()) { /* error */
+  (*modifier_mappings) = root[modeName]["abs"];
+  if ((*modifier_mappings).isNull()) { /* error */
   }
-  mappingKeyNames.clear();
-  mappingKeyNames = modifier_mappings.getMemberNames();
-  mappingValNames.clear();
-  mappingValSequence.clear();
-  tempDownEvents.clear();
-  tempUpEvents.clear();
+  (*mappingKeyNames).clear();
+  (*mappingKeyNames) = (*modifier_mappings).getMemberNames();
+  (*mappingValNames).clear();
+  (*mappingValSequence).clear();
+  (*tempDownEvents).clear();
+  (*tempUpEvents).clear();
 
-  for (unsigned int i = 0; i < mappingKeyNames.size(); ++i) {
-    const char *valCString = mappingKeyNames[i].c_str();
+  for (unsigned int i = 0; i < (*mappingKeyNames).size(); ++i) {
+    const char *valCString = (*mappingKeyNames)[i].c_str();
     code = libevdev_event_code_from_name(EV_ABS, valCString);
     if (code < 0) {
       // not a valid code
       continue;
     } else if ((code >= ABS_HAT0X && code <= ABS_HAT3Y) ||
-               (code == ABS_Z && !tempMode.lt_modifier) ||
-               (code == ABS_RZ && !tempMode.rt_modifier)) {
+               (code == ABS_Z && !(*tempMode).lt_modifier) ||
+               (code == ABS_RZ && !(*tempMode).rt_modifier)) {
       // we don't allow triggers to be bound if we're already using it as a
       // trigger modifier
-      tempDownSignature.type = EV_ABS;
-      tempDownSignature.code = code;
-      tempDownSignature.value = 1;
-      tempUpSignature.type = EV_ABS;
-      tempUpSignature.code = code;
-      tempUpSignature.value = 0;
+      (*tempDownSignature).type = EV_ABS;
+      (*tempDownSignature).code = code;
+      (*tempDownSignature).value = 1;
+      (*tempUpSignature).type = EV_ABS;
+      (*tempUpSignature).code = code;
+      (*tempUpSignature).value = 0;
 
       string valString =
-          modifier_mappings.get(mappingKeyNames[i], true).asString();
-      mappingValSequence.clear();
-      mappingValSequence = splitCommands(valString);
+      (*modifier_mappings).get((*mappingKeyNames)[i], true).asString();
+      (*mappingValSequence).clear();
+      (*mappingValSequence) = splitCommands(valString);
 
-      for (unsigned int j = 0; j < mappingValSequence.size(); ++j) {
-        const char *valCString = mappingValSequence[j].c_str();
+      for (unsigned int j = 0; j < (*mappingValSequence).size(); ++j) {
+        const char *valCString = (*mappingValSequence)[j].c_str();
         code = libevdev_event_code_from_name(EV_KEY, valCString);
         if (code < 0) {
           // not a valid code
           continue;
         }
-        tempEvent.type = EV_KEY;
-        tempEvent.code = code;
-        tempEvent.value = 1;
-        tempDownEvents.push_back(tempEvent);
-        tempEvent.value = 0;
-        tempUpEvents.push_back(tempEvent);
+        (*tempEvent).type = EV_KEY;
+        (*tempEvent).code = code;
+        (*tempEvent).value = 1;
+        (*tempDownEvents).push_back((*tempEvent));
+        (*tempEvent).value = 0;
+        (*tempUpEvents).push_back((*tempEvent));
       }
     } else {
       continue;
     }
-    tempModifier.abs_events[tempDownSignature] = tempDownEvents;
-    tempModifier.abs_events[tempUpSignature] = tempUpEvents;
+    (*tempModifier).abs_events[(*tempDownSignature)] = (*tempDownEvents);
+    (*tempModifier).abs_events[(*tempUpSignature)] = (*tempUpEvents);
   }
   // we'd want to set up the directional-bound key events here
 
   // add the modifier to the mode, then the mode to the virtual device
-  tempMode.no_modifier = tempModifier;
-  tempMode.curr_mod = 0;
-  vd.mode_list.push_back(tempMode);
-  vd.curr_mode = &(vd.mode_list[0]);
-  vd.curr_mode->curr_modifier = &(vd.curr_mode->no_modifier);
-
+  switch (modifierNum) {
+    case 0:
+      (*tempMode).no_modifier = (*tempModifier);
+      break;
+    case 1:
+      (*tempMode).left_modifier = (*tempModifier);
+      break;
+    case 2:
+      (*tempMode).right_modifier = (*tempModifier);
+      break;
+    case 3:
+      (*tempMode).both_modifier = (*tempModifier);
+      break;
+    default:
+      break;
+  }
   // check if mode_code > 0 before checking for more modes
   /* End modifier preset parsing */
 }
@@ -360,11 +393,11 @@ void updateLoop(vector<struct input_event> &inEvents,
     // an event signature is basically just an input_event minus the time
     // component. we could probably just use input_events now that the design
     // has changed
-    input_event signature = inEvents[i];
+    event_sgnt signature;
+    signature.getSignature(inEvents[i]);
     if (signature.type == EV_KEY) {
-      if (vd.mode_code ==
-          signature
-              .code) { // check if we need to swap our mode after this input
+      // check if we need to swap our mode after this input
+      if (vd.mode_code == signature.code && signature.value == 1) {
         vd.swap_mode = true;
         continue;
       }
@@ -380,9 +413,9 @@ void updateLoop(vector<struct input_event> &inEvents,
       if (signature.code == ABS_Z) { // keep track of the trigger states, but
                                      // still allow them to be pressed if
                                      // they're not acting as a modifier
-        vd.LT = signature.type;
+        vd.LT = signature.value;
       } else if (signature.code == ABS_RZ) {
-        vd.RT = signature.type;
+        vd.RT = signature.value;
       }
       if (vd.curr_mode->curr_modifier->abs_events.find(signature) !=
           vd.curr_mode->curr_modifier->abs_events.end()) {
@@ -439,10 +472,23 @@ void updateLoop(vector<struct input_event> &inEvents,
     od.send(outEvents);
     count = 0;
   }
-  vd.curr_mode->updateModifier(
-      vd.LT, vd.RT); // update what trigger modifiers are pressed
+
+  // update what trigger modifiers are pressed
+  vd.curr_mode->updateModifier(vd.LT, vd.RT);
+
   if (vd.swap_mode) {
     // this should increment to the next mode, or go to the original mode if
     // at the end of the list
+    int gdb = 1;
+    if (vd.modeNum < (vd.mode_list.size()-1)) {
+      ++vd.modeNum;
+    } else {
+      vd.modeNum = 0;
+    }
+    // make sure we leave the mode in the default state before switching
+    vd.curr_mode->curr_modifier = &(vd.curr_mode->no_modifier);
+    vd.curr_mode = &(vd.mode_list[vd.modeNum]);
+    vd.curr_mode->curr_modifier = &(vd.curr_mode->no_modifier);
+    vd.swap_mode = false;
   }
 }
