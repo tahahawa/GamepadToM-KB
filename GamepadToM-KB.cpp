@@ -1,7 +1,5 @@
-//#include "dev_mode.h"
-#include "output_dev.h"
-//#include "event_sgnt.h"
 #include "input_dev.h"
+#include "output_dev.h"
 #include "virtual_dev.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -19,10 +17,12 @@
 #include <string>
 #include <unistd.h>
 
-std::vector<std::string> splitCommands(std::string inString) {
-  std::stringstream ss;
-  std::string buf;
-  std::vector<std::string> ret;
+using namespace std;
+
+vector<string> splitCommands(string inString) {
+  stringstream ss;
+  string buf;
+  vector<string> ret;
   ss.str(inString);
   while (ss >> buf) {
     ret.push_back(buf);
@@ -30,56 +30,35 @@ std::vector<std::string> splitCommands(std::string inString) {
   return ret;
 }
 
-/* possible useful code block
-   usleep(25000);
-   memset(&ev, 0, sizeof(struct input_event));
-   ev.type = EV_SYN;
-   ev.code = SYN_REPORT;
-   ev.value = 0;
-   write(fd, &ev, sizeof(struct input_event));
-   usleep(10000);*/
-
-// A lot of the following code has been adapted from SDL
-
-// Dependencies are glib and libevdev so compile with:
-// gcc `pkg-config --cflags --libs libevdev glib-2.0`
-// device-input-prototype.c
-// amended to: g++ device-input-prototype.cpp -Wall `pkg-config --cflags --libs
-// libevdev glib-2.0 jsoncpp`
-
-using namespace std;
+void deviceOptionsParsing(string valString, virtual_dev &vd);
+void modifierOptionsParsing(string valString, dev_mode &tempMode);
 
 Json::Value root; // starts as "null"; will contain the root value after parsing
-std::ifstream config_doc("gp2mkb.conf", std::ifstream::binary);
+ifstream config_doc("gp2mkb.conf", ifstream::binary);
 
 int main() {
   // config file
   config_doc >> root;
   // testing config access
 
+  const Json::Value dev_options = root["options"];
+  if (dev_options.isNull()) {
+    cout << "There is no config file. Please make a config file called "
+            "'gp2mkb.conf'"
+         << endl;
+    return 0;
+  }
+
   input_dev id;
   output_dev od;
 
   virtual_dev vd;
 
-  const Json::Value dev_options = root["options"];
-  if (dev_options.isNull()) { /* error */
-  }
-
   /* Begin device options parsing*/
 
   /* "off" to disable preset switching, otherwise specify the button code to
    * use*/
-  std::string valString = dev_options.get("modes", false).asString();
-  const char *valCString = valString.c_str();
-  if (valString.compare("off") == 0) {
-    vd.mode_code = -1;
-  } else {
-    vd.mode_code = libevdev_event_code_from_name(EV_KEY, valCString);
-    if (vd.mode_code < 0) {
-      // error
-    }
-  }
+  deviceOptionsParsing(dev_options.get("modes", false).asString(), vd);
 
   /* End device options parsing*/
 
@@ -100,22 +79,8 @@ int main() {
   }
 
   /* Setup whether this preset allows for trigger modifiers */
-  valString = mode_options.get("modifiers", false).asString();
-  if (valString.compare("left") == 0) {
-    tempMode.lt_modifier = true;
-    tempMode.rt_modifier = false;
-  } else if (valString.compare("right") == 0) {
-    tempMode.lt_modifier = false;
-    tempMode.rt_modifier = true;
-  } else if (valString.compare("both") == 0) {
-    tempMode.lt_modifier = true;
-    tempMode.rt_modifier = true;
-  } else if (valString.compare("off") == 0) {
-    tempMode.lt_modifier = false;
-    tempMode.rt_modifier = false;
-  } else {
-    // error
-  }
+  modifierOptionsParsing(mode_options.get("modifiers", false).asString(),
+                         tempMode);
 
   /* Setup which stick(s) are used for the mouse. Any stick not used
      could be used for directional-bound key events
@@ -134,7 +99,8 @@ int main() {
     tempMode.la_radial = false;
     tempMode.ra_radial = false;
   } else {
-    // error
+    cout << "Your pointer stick configuration is wrong. Please fix your config."
+         << endl;
   }
 
   /* End mode parsing */
@@ -144,8 +110,8 @@ int main() {
   event_sgnt tempDownSignature;
   event_sgnt tempUpSignature;
   struct input_event tempEvent;
-  std::vector<struct input_event> tempDownEvents;
-  std::vector<struct input_event> tempUpEvents;
+  vector<struct input_event> tempDownEvents;
+  vector<struct input_event> tempUpEvents;
 
   Json::Value mode_modifier = mode["no_modifier"];
   if (mode_modifier.isNull()) { /* error */
@@ -155,9 +121,9 @@ int main() {
   Json::Value modifier_mappings = mode_modifier["keys"];
   if (modifier_mappings.isNull()) { /* error */
   }
-  std::vector<std::string> mappingKeyNames = modifier_mappings.getMemberNames();
-  std::vector<std::string> mappingValNames;
-  std::vector<std::string> mappingValSequence;
+  vector<string> mappingKeyNames = modifier_mappings.getMemberNames();
+  vector<string> mappingValNames;
+  vector<string> mappingValSequence;
   int code;
 
   for (unsigned int i = 0; i < mappingKeyNames.size(); ++i) {
@@ -270,8 +236,8 @@ int main() {
 
   /* The send->translate->receive loop */
   unsigned int numEvs = 1;
-  std::vector<struct input_event> inEvents;
-  std::vector<struct input_event> outEvents;
+  vector<struct input_event> inEvents;
+  vector<struct input_event> outEvents;
 
   int count = 0;
   while (numEvs == 0 || numEvs > 0) {
@@ -399,4 +365,39 @@ int main() {
     }
   }
   return 0;
+}
+
+void deviceOptionsParsing(string valString, virtual_dev &vd) {
+  const char *valCString = valString.c_str();
+  if (valString.compare("off") == 0) {
+    vd.mode_code = -1;
+  } else {
+    vd.mode_code = libevdev_event_code_from_name(EV_KEY, valCString);
+    if (vd.mode_code < 0) {
+      cout << "Something happened that should never happen. Could not set up "
+              "virtual device."
+           << endl;
+      return;
+    }
+  }
+}
+
+void modifierOptionsParsing(string valString, dev_mode &tempMode) {
+  if (valString.compare("left") == 0) {
+    tempMode.lt_modifier = true;
+    tempMode.rt_modifier = false;
+  } else if (valString.compare("right") == 0) {
+    tempMode.lt_modifier = false;
+    tempMode.rt_modifier = true;
+  } else if (valString.compare("both") == 0) {
+    tempMode.lt_modifier = true;
+    tempMode.rt_modifier = true;
+  } else if (valString.compare("off") == 0) {
+    tempMode.lt_modifier = false;
+    tempMode.rt_modifier = false;
+  } else {
+    cout << "Unexpected modifier option specified, please fix your config"
+         << endl;
+    return;
+  }
 }
